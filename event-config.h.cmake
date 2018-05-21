@@ -242,7 +242,7 @@
 #cmakedefine EVENT__HAVE_SETRLIMIT
 
 /* Define to 1 if you have the `sendfile' function. */
-#cmakedefine EVENT__HAVE_SENDFILE
+#cmakedefine EVENT__HAVE_SENDFILE 0
 
 /* Define if F_SETFD is defined in <fcntl.h> */
 #cmakedefine EVENT__HAVE_SETFD
