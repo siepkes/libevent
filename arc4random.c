@@ -461,25 +461,6 @@ arc4random_stir(void)
 }
 #endif
 
-#ifndef ARC4RANDOM_NOADDRANDOM
-ARC4RANDOM_EXPORT void
-arc4random_addrandom(const unsigned char *dat, int datlen)
-{
-	int j;
-	ARC4_LOCK_();
-	if (!rs_initialized)
-		arc4_stir();
-	for (j = 0; j < datlen; j += 256) {
-		/* arc4_addrandom() ignores all but the first 256 bytes of
-		 * its input.  We want to make sure to look at ALL the
-		 * data in 'dat', just in case the user is doing something
-		 * crazy like passing us all the files in /var/log. */
-		arc4_addrandom(dat + j, datlen - j);
-	}
-	ARC4_UNLOCK_();
-}
-#endif
-
 #ifndef ARC4RANDOM_NORANDOM
 ARC4RANDOM_EXPORT ARC4RANDOM_UINT32
 arc4random(void)

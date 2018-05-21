@@ -54,7 +54,7 @@
 #cmakedefine EVENT__HAVE_ARC4RANDOM_BUF
 
 /* Define to 1 if you have the `arc4random_addrandom' function. */
-#cmakedefine EVENT__HAVE_ARC4RANDOM_ADDRANDOM 0
+#undef EVENT__HAVE_ARC4RANDOM_ADDRANDOM
 
 /* Define if clock_gettime is available in libc */
 #cmakedefine EVENT__DNS_USE_CPU_CLOCK_FOR_ID
@@ -242,7 +242,7 @@
 #cmakedefine EVENT__HAVE_SETRLIMIT
 
 /* Define to 1 if you have the `sendfile' function. */
-#cmakedefine EVENT__HAVE_SENDFILE 0
+#undef EVENT__HAVE_SENDFILE
 
 /* Define if F_SETFD is defined in <fcntl.h> */
 #cmakedefine EVENT__HAVE_SETFD

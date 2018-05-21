@@ -62,9 +62,6 @@
 #include <sys/mman.h>
 #endif
 
-#ifdef EVENT__HAVE_SYS_SENDFILE_H
-#include <sys/sendfile.h>
-#endif
 #ifdef EVENT__HAVE_SYS_STAT_H
 #include <sys/stat.h>
 #endif
@@ -99,21 +96,6 @@
 /* some systems do not have MAP_FAILED */
 #ifndef MAP_FAILED
 #define MAP_FAILED	((void *)-1)
-#endif
-
-/* send file support */
-#if defined(EVENT__HAVE_SYS_SENDFILE_H) && defined(EVENT__HAVE_SENDFILE) && defined(__linux__)
-#define USE_SENDFILE		1
-#define SENDFILE_IS_LINUX	1
-#elif defined(EVENT__HAVE_SENDFILE) && defined(__FreeBSD__)
-#define USE_SENDFILE		1
-#define SENDFILE_IS_FREEBSD	1
-#elif defined(EVENT__HAVE_SENDFILE) && defined(__APPLE__)
-#define USE_SENDFILE		1
-#define SENDFILE_IS_MACOSX	1
-#elif defined(EVENT__HAVE_SENDFILE) && defined(__sun__) && defined(__svr4__)
-#define USE_SENDFILE		1
-#define SENDFILE_IS_SOLARIS	1
 #endif
 
 /* Mask of user-selectable callback flags. */
@@ -2415,11 +2397,6 @@ evbuffer_write_iovec(struct evbuffer *buffer, evutil_socket_t fd,
 	 * buffer has (say) 1MB in it, split over 128 chains, there's
 	 * no way it all gets written in one go. */
 	while (chain != NULL && i < NUM_WRITE_IOVEC && howmuch) {
-#ifdef USE_SENDFILE
-		/* we cannot write the file info via writev */
-		if (chain->flags & EVBUFFER_SENDFILE)
-			break;
-#endif
 		iov[i].IOV_PTR_FIELD = (void *) (chain->buffer + chain->misalign);
 		if ((size_t)howmuch >= chain->off) {
 			/* XXXcould be problematic when windows supports mmap*/
@@ -2450,63 +2427,6 @@ evbuffer_write_iovec(struct evbuffer *buffer, evutil_socket_t fd,
 }
 #endif
 
-#ifdef USE_SENDFILE
-static inline int
-evbuffer_write_sendfile(struct evbuffer *buffer, evutil_socket_t dest_fd,
-    ev_ssize_t howmuch)
-{
-	struct evbuffer_chain *chain = buffer->first;
-	struct evbuffer_chain_file_segment *info =
-	    EVBUFFER_CHAIN_EXTRA(struct evbuffer_chain_file_segment,
-		chain);
-	const int source_fd = info->segment->fd;
-#if defined(SENDFILE_IS_MACOSX) || defined(SENDFILE_IS_FREEBSD)
-	int res;
-	ev_off_t len = chain->off;
-#elif defined(SENDFILE_IS_LINUX) || defined(SENDFILE_IS_SOLARIS)
-	ev_ssize_t res;
-	ev_off_t offset = chain->misalign;
-#endif
-
-	ASSERT_EVBUFFER_LOCKED(buffer);
-
-#if defined(SENDFILE_IS_MACOSX)
-	res = sendfile(source_fd, dest_fd, chain->misalign, &len, NULL, 0);
-	if (res == -1 && !EVUTIL_ERR_RW_RETRIABLE(errno))
-		return (-1);
-
-	return (len);
-#elif defined(SENDFILE_IS_FREEBSD)
-	res = sendfile(source_fd, dest_fd, chain->misalign, chain->off, NULL, &len, 0);
-	if (res == -1 && !EVUTIL_ERR_RW_RETRIABLE(errno))
-		return (-1);
-
-	return (len);
-#elif defined(SENDFILE_IS_LINUX)
-	/* TODO(niels): implement splice */
-	res = sendfile(dest_fd, source_fd, &offset, chain->off);
-	if (res == -1 && EVUTIL_ERR_RW_RETRIABLE(errno)) {
-		/* if this is EAGAIN or EINTR return 0; otherwise, -1 */
-		return (0);
-	}
-	return (res);
-#elif defined(SENDFILE_IS_SOLARIS)
-	{
-		const off_t offset_orig = offset;
-		res = sendfile(dest_fd, source_fd, &offset, chain->off);
-		if (res == -1 && EVUTIL_ERR_RW_RETRIABLE(errno)) {
-			if (offset - offset_orig)
-				return offset - offset_orig;
-			/* if this is EAGAIN or EINTR and no bytes were
-			 * written, return 0 */
-			return (0);
-		}
-		return (res);
-	}
-#endif
-}
-#endif
-
 int
 evbuffer_write_atmost(struct evbuffer *buffer, evutil_socket_t fd,
     ev_ssize_t howmuch)
@@ -2523,12 +2443,6 @@ evbuffer_write_atmost(struct evbuffer *buffer, evutil_socket_t fd,
 		howmuch = buffer->total_len;
 
 	if (howmuch > 0) {
-#ifdef USE_SENDFILE
-		struct evbuffer_chain *chain = buffer->first;
-		if (chain != NULL && (chain->flags & EVBUFFER_SENDFILE))
-			n = evbuffer_write_sendfile(buffer, fd, howmuch);
-		else {
-#endif
 #ifdef USE_IOVEC_IMPL
 		n = evbuffer_write_iovec(buffer, fd, howmuch);
 #elif defined(_WIN32)
@@ -2541,9 +2455,6 @@ evbuffer_write_atmost(struct evbuffer *buffer, evutil_socket_t fd,
 		void *p = evbuffer_pullup(buffer, howmuch);
 		EVUTIL_ASSERT(p || !howmuch);
 		n = write(fd, p, howmuch);
-#endif
-#ifdef USE_SENDFILE
-		}
 #endif
 	}
 
@@ -2985,19 +2896,9 @@ evbuffer_file_segment_new(
 	    (ev_uint64_t)offset > (ev_uint64_t)(EVBUFFER_CHAIN_MAX - length))
 		goto err;
 
-#if defined(USE_SENDFILE)
-	if (!(flags & EVBUF_FS_DISABLE_SENDFILE)) {
-		seg->can_sendfile = 1;
-		goto done;
-	}
-#endif
-
 	if (evbuffer_file_segment_materialize(seg)<0)
 		goto err;
 
-#if defined(USE_SENDFILE)
-done:
-#endif
 	if (!(flags & EVBUF_FS_DISABLE_LOCKING)) {
 		EVTHREAD_ALLOC_LOCK(seg->lock, 0);
 	}
